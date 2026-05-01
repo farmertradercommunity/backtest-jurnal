@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Farmer Circle by Farmer Trader Community — Forex Backtest Journal</title>
+<title>Farmer Circle — Forex Backtest Journal</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
@@ -909,7 +909,7 @@
       <circle cx="11" cy="11" r="2" fill="#c9a84c"/>
     </svg>
     <div>
-      Farmer Circle by Farmer Trader Community
+      Farmer Circle
       <span class="logo-sub">Forex Backtest Journal</span>
     </div>
   </div>
@@ -1110,7 +1110,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">Pair</label>
-          <select class="form-select" id="fPair"></select>
+          <select class="form-select" id="fPair" onchange="calcRR()"></select>
         </div>
         <div class="form-group">
           <label class="form-label">Lot Size</label>
@@ -1140,9 +1140,10 @@
           <input class="form-input" type="number" id="fTP" step="0.00001" placeholder="1.09100" oninput="calcRR()">
         </div>
         <div class="form-group">
-          <label class="form-label">Pip Value ($/pip)</label>
-          <input class="form-input" type="number" id="fPipVal" value="1" step="0.01" oninput="calcRR()">
-          <div class="pip-value-helper">Standard lot 1.0 = $10/pip. Mini lot 0.1 = $1/pip</div>
+          <label class="form-label">Pip Info (Auto)</label>
+          <div id="pipInfoBox" style="background:var(--bg4);border:1px solid var(--border);border-radius:var(--radius2);padding:10px 12px;font-family:var(--mono);font-size:12px;color:var(--text2);min-height:40px;">
+            <span id="pipInfoText" style="color:var(--text3)">Pilih pair untuk lihat pip info</span>
+          </div>
         </div>
 
         <div class="form-group full" id="rrDisplay" style="display:none">
@@ -1252,7 +1253,7 @@ function initSettings() {
       'Session trading sesuai (London/NY)',
       'Tidak ada high impact news dalam 1 jam'
     ],
-    pairs: ['EURUSD','GBPUSD','USDJPY','XAUUSD','AUDUSD','USDCAD','NZDUSD','EURJPY','GBPJPY'],
+    pairs: ['EURUSD','GBPUSD','USDJPY','GBPJPY','EURJPY','AUDUSD','NZDUSD','USDCAD','USDCHF','AUDJPY','XAUUSD','XAGUSD','NAS100','US30','SPX500'],
     strategies: ['ICT Order Block','Smart Money Concept','Breaker Block','FVG + OB','Supply & Demand','Price Action','SNR Classical','Fibonacci Retracement','VWAP Strategy','Custom Setup']
   };
   const saved = localStorage.getItem('apexSettings');
@@ -1766,7 +1767,6 @@ function openAddModal() {
   document.getElementById('fEntry').value = '';
   document.getElementById('fSL').value = '';
   document.getElementById('fTP').value = '';
-  document.getElementById('fPipVal').value = '1';
   document.getElementById('fReason').value = '';
   document.getElementById('fNotes').value = '';
   document.getElementById('rrDisplay').style.display = 'none';
@@ -1825,58 +1825,110 @@ function updateChecklistProgress() {
   fill.className = 'progress-fill ' + (pct >= 100 ? 'green' : pct >= 60 ? '' : 'red');
 }
 
+// ══════════════════════════════════════════
+// PIP CONFIG PER PAIR
+// pip_size   : 1 pip = berapa unit harga (mis. EURUSD = 0.0001, USDJPY = 0.01, XAUUSD = 0.1)
+// pip_usd    : nilai 1 pip untuk 1 standard lot (1.0) dalam USD
+//
+// Rumus PnL:
+//   pips     = price_diff / pip_size
+//   pnl ($)  = pips * pip_usd * lot
+//
+// Referensi pip_usd per 1 standard lot:
+//   Forex USD quoted (EURUSD, GBPUSD, AUDUSD, NZDUSD) : $10/pip
+//   Forex JPY pairs (USDJPY ≈ 109, pip=0.01)          : ~$9.17/pip  → pakai $9.2
+//   Forex JPY cross (GBPJPY, EURJPY, AUDJPY)          : ~$9.0/pip
+//   XAUUSD  (Gold, pip=0.1)                           : $10/pip  (1 pip Gold = $1 per 0.1 lot)
+//   XAGUSD  (Silver, pip=0.001)                       : $50/pip
+//   NAS100  (Nasdaq, pip=1)                            : $1/pip
+//   US30    (Dow Jones, pip=1)                         : $1/pip
+//   SPX500  (S&P500, pip=1)                            : $1/pip
+// ══════════════════════════════════════════
+const PAIR_CONFIG = {
+  // ── Forex Major (USD as quote → $10/pip per lot 1.0) ──
+  'EURUSD': { pip_size: 0.0001, pip_usd: 10,   label: '4-digit, $10/pip/lot' },
+  'GBPUSD': { pip_size: 0.0001, pip_usd: 10,   label: '4-digit, $10/pip/lot' },
+  'AUDUSD': { pip_size: 0.0001, pip_usd: 10,   label: '4-digit, $10/pip/lot' },
+  'NZDUSD': { pip_size: 0.0001, pip_usd: 10,   label: '4-digit, $10/pip/lot' },
+  'USDCAD': { pip_size: 0.0001, pip_usd: 7.7,  label: '4-digit, ~$7.7/pip/lot' },
+  'USDCHF': { pip_size: 0.0001, pip_usd: 11.2, label: '4-digit, ~$11.2/pip/lot' },
+  // ── JPY Pairs (pip = 0.01) ──
+  'USDJPY': { pip_size: 0.01,   pip_usd: 9.2,  label: '2-digit JPY, ~$9.2/pip/lot' },
+  'GBPJPY': { pip_size: 0.01,   pip_usd: 9.0,  label: '2-digit JPY cross, ~$9/pip/lot' },
+  'EURJPY': { pip_size: 0.01,   pip_usd: 9.0,  label: '2-digit JPY cross, ~$9/pip/lot' },
+  'AUDJPY': { pip_size: 0.01,   pip_usd: 9.0,  label: '2-digit JPY cross, ~$9/pip/lot' },
+  // ── Komoditi ──
+  'XAUUSD': { pip_size: 0.1,    pip_usd: 10,   label: 'Gold, 1 pip=0.1, $10/pip/lot' },
+  'XAGUSD': { pip_size: 0.001,  pip_usd: 50,   label: 'Silver, 1 pip=0.001, $50/pip/lot' },
+  // ── Indeks ──
+  'NAS100': { pip_size: 1,      pip_usd: 1,    label: 'Nasdaq, 1 pip=1 point, $1/pip/lot' },
+  'US30':   { pip_size: 1,      pip_usd: 1,    label: 'Dow Jones, 1 pip=1 point, $1/pip/lot' },
+  'SPX500': { pip_size: 1,      pip_usd: 1,    label: 'S&P500, 1 pip=1 point, $1/pip/lot' },
+};
+
+function getPairConfig(pair) {
+  return PAIR_CONFIG[pair] || { pip_size: 0.0001, pip_usd: 10, label: '4-digit standard' };
+}
+
 function calcRR() {
+  const pair  = document.getElementById('fPair').value;
   const entry = parseFloat(document.getElementById('fEntry').value);
-  const sl = parseFloat(document.getElementById('fSL').value);
-  const tp = parseFloat(document.getElementById('fTP').value);
-  const lot = parseFloat(document.getElementById('fLot').value) || 0.01;
-  const pipVal = parseFloat(document.getElementById('fPipVal').value) || 1;
+  const sl    = parseFloat(document.getElementById('fSL').value);
+  const tp    = parseFloat(document.getElementById('fTP').value);
+  const lot   = parseFloat(document.getElementById('fLot').value) || 0.01;
+  const cfg   = getPairConfig(pair);
+
+  // Update pip info box
+  const pipPerLot = (cfg.pip_usd * lot).toFixed(2);
+  document.getElementById('pipInfoText').innerHTML =
+    `<b style="color:var(--gold)">${pair}</b> &nbsp;|&nbsp; 1 pip = ${cfg.pip_size} &nbsp;|&nbsp; ` +
+    `$<b style="color:var(--gold)">${pipPerLot}</b>/pip @ lot ${lot} &nbsp;<span style="color:var(--text3)">(${cfg.label})</span>`;
 
   if (!entry || !sl || !tp) {
     document.getElementById('rrDisplay').style.display = 'none';
     return;
   }
 
-  const slPips = Math.abs(entry - sl) * 10000;
-  const tpPips = Math.abs(tp - entry) * 10000;
-  const rr = tpPips / slPips;
-  const risk = slPips * lot * pipVal * 10;
-  const reward = tpPips * lot * pipVal * 10;
+  const slPips = Math.abs(entry - sl) / cfg.pip_size;
+  const tpPips = Math.abs(tp - entry) / cfg.pip_size;
+  const rr     = tpPips / slPips;
+  const risk   = slPips * cfg.pip_usd * lot;
+  const reward = tpPips * cfg.pip_usd * lot;
 
-  document.getElementById('rrVal').textContent = rr.toFixed(2) + ':1';
-  document.getElementById('riskVal').textContent = '-$' + risk.toFixed(2);
-  document.getElementById('rewardVal').textContent = '+$' + reward.toFixed(2);
-  document.getElementById('slPipsVal').textContent = slPips.toFixed(1) + ' pip';
-  document.getElementById('tpPipsVal').textContent = tpPips.toFixed(1) + ' pip';
+  document.getElementById('rrVal').textContent    = rr.toFixed(2) + ':1';
+  document.getElementById('riskVal').textContent  = '-$' + risk.toFixed(2);
+  document.getElementById('rewardVal').textContent= '+$' + reward.toFixed(2);
+  document.getElementById('slPipsVal').textContent= slPips.toFixed(1) + ' pip';
+  document.getElementById('tpPipsVal').textContent= tpPips.toFixed(1) + ' pip';
   document.getElementById('rrDisplay').style.display = '';
 }
 
 function saveTrade() {
-  const date = document.getElementById('fDate').value;
-  const pair = document.getElementById('fPair').value;
-  const lot = parseFloat(document.getElementById('fLot').value);
-  const entry = parseFloat(document.getElementById('fEntry').value);
-  const sl = parseFloat(document.getElementById('fSL').value);
-  const tp = parseFloat(document.getElementById('fTP').value);
-  const pipVal = parseFloat(document.getElementById('fPipVal').value) || 1;
+  const date     = document.getElementById('fDate').value;
+  const pair     = document.getElementById('fPair').value;
+  const lot      = parseFloat(document.getElementById('fLot').value);
+  const entry    = parseFloat(document.getElementById('fEntry').value);
+  const sl       = parseFloat(document.getElementById('fSL').value);
+  const tp       = parseFloat(document.getElementById('fTP').value);
   const strategy = document.getElementById('fStrategy').value;
-  const reason = document.getElementById('fReason').value;
-  const notes = document.getElementById('fNotes').value;
+  const reason   = document.getElementById('fReason').value;
+  const notes    = document.getElementById('fNotes').value;
+  const cfg      = getPairConfig(pair);
 
   if (!date || !pair || !entry || !sl || !tp) {
     alert('Lengkapi data: tanggal, pair, entry, SL, dan TP!');
     return;
   }
 
-  const slPips = Math.abs(entry - sl) * 10000;
-  const tpPips = Math.abs(tp - entry) * 10000;
-  const rr = tpPips / slPips;
+  const slPips = Math.abs(entry - sl) / cfg.pip_size;
+  const tpPips = Math.abs(tp - entry) / cfg.pip_size;
+  const rr     = tpPips / slPips;
 
   let pnl;
   if (currentResult === 'tp') {
-    pnl = tpPips * lot * pipVal * 10;
+    pnl = tpPips * cfg.pip_usd * lot;
   } else {
-    pnl = -(slPips * lot * pipVal * 10);
+    pnl = -(slPips * cfg.pip_usd * lot);
   }
 
   const checkItems = Array.from(document.querySelectorAll('#formChecklist input[type="checkbox"]'))
@@ -1918,7 +1970,6 @@ function editTrade(id) {
   document.getElementById('fEntry').value = t.entry;
   document.getElementById('fSL').value = t.sl;
   document.getElementById('fTP').value = t.tp;
-  document.getElementById('fPipVal').value = '';
   document.getElementById('fStrategy').value = t.strategy;
   document.getElementById('fReason').value = t.reason || '';
   document.getElementById('fNotes').value = t.notes || '';
