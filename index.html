@@ -2138,7 +2138,7 @@ function exportCSV() {
     t.rr.toFixed(2), t.result, t.pnl.toFixed(2), `"${t.strategy}"`, `"${(t.reason||'').replace(/"/g,"''")}"`
   ]);
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-  download('apex-backtest.csv', csv, 'text/csv');
+  download('FarmerCircle-backtest.csv', csv, 'text/csv');
 }
 
 function exportExcel() {
@@ -2265,7 +2265,7 @@ function exportExcel() {
 
 function exportJSON() {
   const data = { settings, trades };
-  download('FC-Backtest-backup.json', JSON.stringify(data, null, 2), 'application/json');
+  download('FarmerCircle-Backtest-backup.json', JSON.stringify(data, null, 2), 'application/json');
 }
 
 function importJSON() { document.getElementById('importFile').click(); }
