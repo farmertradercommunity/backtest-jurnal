@@ -6,6 +6,7 @@
 <title>Farmer Circle — Forex Backtest Journal</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -918,7 +919,8 @@
       Modal: <b id="hModal">$10,000</b> &nbsp;|&nbsp; Equity: <b id="hEquity" style="color:var(--green)">$10,000</b>
     </div>
     <div class="header-actions">
-      <button class="btn" onclick="exportCSV()">⬇ Export CSV</button>
+      <button class="btn" onclick="exportCSV()">⬇ CSV</button>
+      <button class="btn" onclick="exportExcel()" style="border-color:rgba(46,204,143,0.4);color:#2ecc8f;">⬇ Excel</button>
       <button class="btn btn-gold" onclick="openAddModal()">＋ New Trade</button>
     </div>
   </div>
@@ -2137,6 +2139,128 @@ function exportCSV() {
   ]);
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   download('apex-backtest.csv', csv, 'text/csv');
+}
+
+function exportExcel() {
+  if (!window.XLSX) { alert('SheetJS belum dimuat. Coba reload halaman.'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: Trade Log ──
+  const headers = ['ID','Date','Pair','Direction','Lot','Entry','SL','TP','R:R','Result','PnL ($)','Strategy','Reason','Notes'];
+  const rows = trades.map(t => [
+    t.id, t.date, t.pair, t.direction.toUpperCase(), t.lot,
+    parseFloat(t.entry), parseFloat(t.sl), parseFloat(t.tp),
+    parseFloat(t.rr.toFixed(2)), t.result === 'tp' ? 'TP Hit' : 'SL Hit',
+    parseFloat(t.pnl.toFixed(2)), t.strategy, t.reason || '', t.notes || ''
+  ]);
+  const ws1 = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+  // Column widths
+  ws1['!cols'] = [
+    {wch:5},{wch:12},{wch:10},{wch:10},{wch:8},{wch:10},{wch:10},{wch:10},
+    {wch:7},{wch:9},{wch:10},{wch:22},{wch:30},{wch:30}
+  ];
+
+  // Style header row
+  headers.forEach((_, ci) => {
+    const cellRef = XLSX.utils.encode_cell({ r: 0, c: ci });
+    if (!ws1[cellRef]) ws1[cellRef] = {};
+    ws1[cellRef].s = {
+      font: { bold: true, color: { rgb: '0A0A0F' } },
+      fill: { fgColor: { rgb: 'C9A84C' } },
+      alignment: { horizontal: 'center' }
+    };
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Trade Log');
+
+  // ── Sheet 2: Summary Stats ──
+  const s = computeStats();
+  const totalTrades = trades.length;
+  const wins = trades.filter(t => t.result === 'tp').length;
+  const losses = totalTrades - wins;
+  const grossWin = trades.filter(t => t.pnl > 0).reduce((a, t) => a + t.pnl, 0);
+  const grossLoss = Math.abs(trades.filter(t => t.pnl < 0).reduce((a, t) => a + t.pnl, 0));
+  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : 0;
+  const pnlArr = trades.map(t => t.pnl);
+  let peak = 0, maxDD = 0, runPeak = settings.modal;
+  trades.slice().sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(t => {
+    runPeak += t.pnl;
+    if (runPeak > peak) peak = runPeak;
+    const dd = peak - runPeak;
+    if (dd > maxDD) maxDD = dd;
+  });
+
+  const summaryData = [
+    ['FARMER CIRCLE — BACKTEST SUMMARY', ''],
+    ['Generated', new Date().toLocaleString('id-ID')],
+    ['', ''],
+    ['PERFORMANCE OVERVIEW', ''],
+    ['Modal Awal', `$${settings.modal.toLocaleString()}`],
+    ['Total Trades', totalTrades],
+    ['Total Win (TP)', wins],
+    ['Total Loss (SL)', losses],
+    ['Win Rate', `${s.wr.toFixed(1)}%`],
+    ['Net PnL', `$${s.totalPnL.toFixed(2)}`],
+    ['Equity Akhir', `$${(settings.modal + s.totalPnL).toFixed(2)}`],
+    ['Return (%)', `${((s.totalPnL / settings.modal) * 100).toFixed(2)}%`],
+    ['', ''],
+    ['RISK METRICS', ''],
+    ['Average Win', `$${s.avgWin.toFixed(2)}`],
+    ['Average Loss', `$${s.avgLoss.toFixed(2)}`],
+    ['Profit Factor', profitFactor.toFixed(2)],
+    ['Max Drawdown', `$${maxDD.toFixed(2)}`],
+    ['Avg R:R', `${s.avgRR.toFixed(2)}R`],
+    ['', ''],
+    ['SETTINGS', ''],
+    ['Target Win Rate', `${settings.targetWR}%`],
+    ['Target R:R', `${settings.targetRR}R`],
+    ['Trader', settings.name || 'Farmer Circle'],
+  ];
+
+  const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
+  ws2['!cols'] = [{wch:25},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+
+  // ── Sheet 3: Monthly Breakdown ──
+  const monthMap = {};
+  trades.forEach(t => {
+    const m = t.date.substring(0, 7);
+    if (!monthMap[m]) monthMap[m] = { trades: 0, wins: 0, pnl: 0 };
+    monthMap[m].trades++;
+    if (t.result === 'tp') monthMap[m].wins++;
+    monthMap[m].pnl += t.pnl;
+  });
+  const monthHeaders = ['Month', 'Trades', 'Wins', 'Losses', 'Win Rate', 'Net PnL ($)'];
+  const monthRows = Object.entries(monthMap).sort().map(([m, d]) => [
+    m, d.trades, d.wins, d.trades - d.wins,
+    `${((d.wins/d.trades)*100).toFixed(1)}%`,
+    parseFloat(d.pnl.toFixed(2))
+  ]);
+  const ws3 = XLSX.utils.aoa_to_sheet([monthHeaders, ...monthRows]);
+  ws3['!cols'] = [{wch:10},{wch:8},{wch:8},{wch:8},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Monthly');
+
+  // ── Sheet 4: Strategy Breakdown ──
+  const stratMap = {};
+  trades.forEach(t => {
+    if (!stratMap[t.strategy]) stratMap[t.strategy] = { trades:0, wins:0, pnl:0 };
+    stratMap[t.strategy].trades++;
+    if (t.result==='tp') stratMap[t.strategy].wins++;
+    stratMap[t.strategy].pnl += t.pnl;
+  });
+  const stratHeaders = ['Strategy', 'Trades', 'Wins', 'Losses', 'Win Rate', 'Net PnL ($)'];
+  const stratRows = Object.entries(stratMap).sort((a,b)=>b[1].pnl-a[1].pnl).map(([s,d]) => [
+    s, d.trades, d.wins, d.trades-d.wins,
+    `${((d.wins/d.trades)*100).toFixed(1)}%`,
+    parseFloat(d.pnl.toFixed(2))
+  ]);
+  const ws4 = XLSX.utils.aoa_to_sheet([stratHeaders, ...stratRows]);
+  ws4['!cols'] = [{wch:28},{wch:8},{wch:8},{wch:8},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws4, 'By Strategy');
+
+  const filename = `FarmerCircle_Backtest_${new Date().toISOString().substring(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }
 
 function exportJSON() {
